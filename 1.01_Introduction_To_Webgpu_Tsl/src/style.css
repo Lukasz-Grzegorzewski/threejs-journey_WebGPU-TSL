@@ -8,7 +8,7 @@ body {
   overflow: hidden;
 }
 
-.webgl {
+.threejs {
   position: fixed;
   top: 0;
   left: 0;

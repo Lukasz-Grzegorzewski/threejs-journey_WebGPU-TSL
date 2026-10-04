@@ -1,5 +1,15 @@
-import * as THREE from "three/webgpu";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import {
+  checker,
+  mx_noise_vec3,
+  positionLocal,
+  sin,
+  time,
+  uv,
+  vec2,
+  vec3,
+} from "three/tsl";
+import * as THREE from "three/webgpu";
 
 /**
  * Base
@@ -77,7 +87,38 @@ renderer.setClearColor(0x111111);
 
   const geometry = new THREE.PlaneGeometry(10, 10, 10, 10);
 
-  const material = new THREE.MeshStandardMaterial({ map: textureColor });
+  const material = new THREE.MeshStandardNodeMaterial({
+    map: textureColor,
+    transparent: true,
+  });
+
+  // fade at the edge of a square material
+  let fade = uv()
+    .sub(0.5)
+    .length()
+    // .remap(
+    //   0.2, 0.5,   // input range where the remap will work
+    //   1, 0        // output range (default 0,1). Invert= 1,0
+    // )
+    /**
+     *  smooth the transition between 1 -> 0
+     *  (remap - the edge was to hard. )
+     *  smoothstep(a, b)
+     *    a - where the value will be 0(black-unvisible)
+     *    b - where the value will be 1(white-visible)
+     */
+    .smoothstep(0.5, 0);
+
+  // material.outputNode = vec4(
+  //   vec3(fade),
+  //   1
+  // )
+  material.opacityNode = fade;
+
+  // const noise = vertexStage(mx_noise_vec3(uv().mul(4))); // vertexStage - imported from three/tsl
+  // mx_noise_vec3(uv().mul(4)).toVarying('newName'); => we can create varying manualy
+  const noise = mx_noise_vec3(uv().mul(4)).toVertexStage();
+  material.colorNode = noise;
 
   const mesh = new THREE.Mesh(geometry, material);
   mesh.rotation.x = -Math.PI * 0.5;
@@ -91,7 +132,40 @@ renderer.setClearColor(0x111111);
 {
   const geometry = new THREE.TorusKnotGeometry(0.5, 0.24, 128, 32);
 
-  const material = new THREE.MeshStandardMaterial();
+  const material = new THREE.MeshStandardNodeMaterial({
+    color: 0xff0000,
+    metalness: 0.5,
+    roughness: 0.25,
+  });
+
+  const pattern = checker(
+    uv()
+      // Animate the UV coordinates over time.
+      .add(
+        time.mul(
+          0.02, // Smaller value = slower movement.
+        ),
+      )
+      // Scale the UV space to control the checker density.
+      .mul(
+        vec2(
+          10, // Number of checker cells along the X axis.
+          5, // Number of checker cells along the Y axis.
+        ), // Use vec2 for non-uniform scaling (10 × 5). A single number would scale both axes equally.
+      ),
+  );
+
+  material.colorNode = vec3(pattern, 0, 0);
+  material.roughnessNode = pattern;
+
+  // wiggle effect. Based on sin of time and height of an object
+  const zOffset = sin(
+    time.add(
+      // add height value. higher = the translation will be bigger
+      positionLocal.y.mul(3), // insceasing the y value so the frequence of wiggle is greater
+    ),
+  ).mul(0.4);
+  material.positionNode = positionLocal.add(vec3(0, 0, zOffset)); // wiggle effect. Based on sin of time and height of an object
 
   const mesh = new THREE.Mesh(geometry, material);
   mesh.castShadow = true;

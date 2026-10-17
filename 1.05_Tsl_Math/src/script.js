@@ -1,5 +1,15 @@
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { uv } from "three/tsl";
+import {
+  mx_noise_float,
+  mx_noise_vec3,
+  positionLocal,
+  positionWorld,
+  rand,
+  rotate,
+  time,
+  uv,
+  vec3,
+} from "three/tsl";
 import * as THREE from "three/webgpu";
 
 /**
@@ -82,6 +92,13 @@ renderer.setClearColor(0x111111);
     map: textureColor,
     transparent: true,
   });
+  material.colorNode = time
+    .sin()
+    .mul(0.5) // = -0.5 <-> 0.5
+    .add(0.5); // = 0 <-> 1
+  // material.colorNode = time.sin().remap(-1, 1, 0, 1); // change respectively into 0 <-> 1 (-1 into 0 and 1 into 1)
+  // material.colorNode = hash(uv().mul(100)); // Generates a hash value in the range `[0, 1]` from the given seed. Multiply by 100 because the results are very small
+  material.colorNode = rand(uv().mul(100).floor()); // Generates a hash value in the range `[0, 1]` from the given seed. Multiply by 100 and floor it to creates the one color bigger squares
 
   const fade = uv().sub(0.5).length().smoothstep(0.5, 0.2);
   material.opacityNode = fade;
@@ -99,6 +116,14 @@ renderer.setClearColor(0x111111);
   const geometry = new THREE.TorusKnotGeometry(0.5, 0.24, 128, 32);
 
   const material = new THREE.MeshStandardNodeMaterial();
+
+  const angle = time.add(positionLocal.y).sin();
+  const newXZ = rotate(positionLocal.xz, angle);
+  material.positionNode = vec3(newXZ.x, positionLocal.y, newXZ.y);
+
+  // const noise = mx_noise_float(positionWorld.mul(4));
+  const noise = mx_noise_vec3(positionWorld.mul(4));
+  material.colorNode = vec3(noise);
 
   const mesh = new THREE.Mesh(geometry, material);
   mesh.castShadow = true;

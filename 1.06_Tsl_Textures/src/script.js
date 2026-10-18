@@ -2,7 +2,29 @@ import * as THREE from "three/webgpu";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
 import { Inspector } from "three/addons/inspector/Inspector.js";
-import { uv } from "three/tsl";
+import {
+  uv,
+  texture,
+  rotateUV,
+  vec2,
+  vec4,
+  triplanarTexture,
+  float,
+  positionLocal,
+  normalLocal,
+  mix,
+  materialColor,
+  oscSine,
+  time,
+  blendDodge,
+  blendBurn,
+  blendColor,
+  saturation,
+  grayscale,
+  luminance,
+  vibrance,
+  hue,
+} from "three/tsl";
 
 /**
  * Base
@@ -21,6 +43,10 @@ const textureLoader = new THREE.TextureLoader();
  */
 const uvChecker = textureLoader.load("./uvChecker.png");
 uvChecker.colorSpace = THREE.SRGBColorSpace;
+uvChecker.wrapS = THREE.MirroredRepeatWrapping;
+uvChecker.wrapT = THREE.MirroredRepeatWrapping;
+uvChecker.repeat.set(3, 3);
+uvChecker.rotation = 1;
 
 /**
  * Sizes
@@ -85,9 +111,35 @@ renderer.inspector = new Inspector();
   const geometry = new THREE.PlaneGeometry(10, 10, 10, 10);
 
   const material = new THREE.MeshStandardNodeMaterial({
-    map: uvChecker,
+    // map: uvChecker,
+    color: "crimson",
     transparent: true,
   });
+
+  // material.colorNode = texture(
+  //   uvChecker,
+  //   rotateUV(
+  //     uv() // just uv() it will switch off uvChecker.rotation = 1; uvChecker.repeat.set(3, 3);
+  //       .mul(3), // it works as <uvChecker.repeat.set(3, 3)>
+  //     -1,
+  //     vec2(0), // center of rotation
+  //   ),
+  //   // 2, // mipmap level
+  // );
+
+  const oscilation = oscSine(
+    // oscSine: -1 <-> 1 =====> 0 <-> 1
+    time.mul(0.5), // make oscilation slower
+  );
+  // material.colorNode = mix(texture(uvChecker).rgb, materialColor, oscilation); // mix color based on third value
+  // material.colorNode = blendDodge(texture(uvChecker).rgb, materialColor); //
+  // material.colorNode = blendBurn(texture(uvChecker).rgb, materialColor); //
+  // material.colorNode = blendColor(vec4(texture(uvChecker).rgb), vec4(materialColor, 0.5) ); //
+  // material.colorNode = saturation(texture(uvChecker).rgb, oscilation.mul(2)); // 1 - unmodified, 0 - desaturated, > 1 -> saturate
+  // material.colorNode = grayscale(texture(uvChecker).rgb); //
+  // material.colorNode = luminance(texture(uvChecker).rgb); //
+  // material.colorNode = vibrance(texture(uvChecker).rgb, oscilation); //
+  material.colorNode = hue(texture(uvChecker).rgb, time); // turn color on the hue wheel
 
   const fade = uv().sub(0.5).length().smoothstep(0.5, 0.2);
   material.opacityNode = fade;
@@ -96,6 +148,9 @@ renderer.inspector = new Inspector();
   mesh.rotation.x = -Math.PI * 0.5;
   mesh.receiveShadow = true;
   scene.add(mesh);
+
+  const gui = renderer.inspector.createParameters("Floor");
+  gui.addColor(material, "color");
 }
 
 /**
@@ -105,6 +160,17 @@ renderer.inspector = new Inspector();
   const geometry = new THREE.TorusKnotGeometry(0.5, 0.24, 128, 32);
 
   const material = new THREE.MeshStandardNodeMaterial();
+
+  material.colorNode = triplanarTexture(
+    texture(
+      uvChecker, //
+      null, //
+      null, //
+      float(1), //
+      positionLocal, //
+      normalLocal, //
+    ),
+  );
 
   const mesh = new THREE.Mesh(geometry, material);
   mesh.castShadow = true;

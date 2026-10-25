@@ -2,7 +2,21 @@ import * as THREE from "three/webgpu";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
 import { Inspector } from "three/addons/inspector/Inspector.js";
-import { uv } from "three/tsl";
+import {
+  and,
+  bool,
+  Discard,
+  float,
+  Fn,
+  If,
+  int,
+  lessThanEqual,
+  Loop,
+  not,
+  uv,
+  vec2,
+  vec3,
+} from "three/tsl";
 
 /**
  * Base
@@ -90,6 +104,93 @@ renderer.inspector = new Inspector();
     side: THREE.DoubleSide,
   });
 
+  const circles = Fn(
+    ({
+      coordinates = uv(),
+      center = vec2(0.5),
+      radius = float(0.25),
+      thickness = float(0.02),
+      inverted = bool(false),
+      discarded = bool(false),
+      count = int(5),
+      span = float(0.1),
+    }) => {
+      const lines = float(0);
+
+      Loop(
+        // count, // we need to convert i to float later becuse 'count' is an INT
+        {
+          start: 0, // default
+          end: count,
+          type: "float",
+          condition: "<", // default
+          name: "i", // default
+        }, // object with more details about looping variables. 'i' don't need to be converted to float later
+        ({ i }) => {
+          lines.addAssign(
+            // +=
+            circle({
+              coordinates,
+              center,
+              radius: radius.add(i.mul(span)),
+              thickness,
+              inverted: bool(false),
+              discarded: bool(false),
+            }),
+          );
+        },
+      );
+
+      If(inverted, () => {
+        lines.assign(lines.oneMinus());
+      });
+
+      lines.lessThanEqual(0).and(discarded).discard();
+
+      return lines;
+    },
+  );
+
+  const circle = Fn(
+    ({
+      coordinates = uv(),
+      center = vec2(0.5),
+      radius = float(0.25),
+      thickness = float(0.02),
+      inverted = bool(false),
+      discarded = bool(false),
+    }) => {
+      const distanceToCenter = coordinates.distance(center);
+      const lineSDF = distanceToCenter.sub(radius);
+      const line = lineSDF.abs().step(thickness.div(2));
+
+      If(inverted.not(), () => {
+        line.assign(line.oneMinus());
+      });
+
+      // ways to condition Discarding
+      // If(line.lessThanEqual(0).and(discarded), () => { Discard() });
+      // Discard(line.lessThanEqual(0).and(discarded));
+      // and(lessThanEqual(line, 0), discarded).discard();
+      line.lessThanEqual(0).and(discarded).discard();
+
+      return line;
+    },
+    {
+      coordinates: "vec2",
+      center: "vec2",
+      radius: "float",
+      thickness: "float",
+      inverted: "bool",
+      discarded: "bool",
+      return: "float",
+    }, // it is to create a function in Shader. Without it will add for loop in the Shader without any function
+  );
+
+  material.colorNode = vec3(
+    circles({ radius: float(0.075) }).toVar("circlesOutput"), //
+  );
+
   const fade = uv().sub(0.5).length().smoothstep(0.5, 0.2);
   material.opacityNode = fade;
 
@@ -97,6 +198,9 @@ renderer.inspector = new Inspector();
   mesh.rotation.x = -Math.PI * 0.5;
   mesh.receiveShadow = true;
   scene.add(mesh);
+
+  const program = await renderer.debug.getShaderAsync(scene, camera, mesh);
+  console.log(program.fragmentShader);
 }
 
 /**

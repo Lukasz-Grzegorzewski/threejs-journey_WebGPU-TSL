@@ -2,7 +2,19 @@ import * as THREE from "three/webgpu";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { TransformControls } from "three/addons/controls/TransformControls.js";
 import { Inspector } from "three/addons/inspector/Inspector.js";
-import { texture, uv } from "three/tsl";
+import {
+  attribute,
+  bufferAttribute,
+  color,
+  float,
+  positionWorld,
+  texture,
+  time,
+  uniform,
+  uniformArray,
+  uv,
+  vec2,
+} from "three/tsl";
 
 /**
  * Base
@@ -84,10 +96,23 @@ renderer.inspector = new Inspector();
 {
   const geometry = new THREE.PlaneGeometry(10, 10, 10, 10);
 
+  const count = geometry.attributes.position.count;
+  const randomArray = new Float32Array(count);
+  for (let i = 0; i < count; i++) {
+    randomArray[i] = Math.random();
+  }
+  const randomBuffer = new THREE.BufferAttribute(randomArray, 1);
+  // geometry.setAttribute("random", randomBuffer);
+  // const random = attribute("random");
+  // instead of putting attribute into geometry we can use it directly
+  const random = bufferAttribute(randomBuffer, "float");
+
   const material = new THREE.MeshStandardNodeMaterial({
     map: uvChecker,
     transparent: true,
   });
+
+  material.colorNode = random;
 
   const fade = uv().sub(0.5).length().smoothstep(0.5, 0.2);
   material.opacityNode = fade;
@@ -106,11 +131,33 @@ renderer.inspector = new Inspector();
 
   const material = new THREE.MeshStandardNodeMaterial();
 
+  const frequencies = uniform(vec2(2, 0.25));
+  const uColors = uniformArray([
+    new THREE.Color(0x0b5d79),
+    new THREE.Color(0x5ed6c2),
+    new THREE.Color(0xfeedaa),
+    new THREE.Color(0xfc8f74),
+    new THREE.Color(0xcf2c65),
+  ]);
+  const pattern = positionWorld.y
+    .mul(frequencies.x)
+    .sub(time.mul(frequencies.y))
+    .fract()
+    .mul(uColors.array.length) // as many colors are in uColorsArray
+    .floor() // we want 0,1,2,3,4 and not 1,2,3,4,5
+    .toInt(); // it removes decimal part so '.floor()' is not really needed
+  material.colorNode = uColors.element(pattern); // element gives Int so '.toInt' is not really needed
+
   const mesh = new THREE.Mesh(geometry, material);
   mesh.castShadow = true;
   mesh.receiveShadow = true;
   mesh.position.y = 1;
   scene.add(mesh);
+
+  const gui = renderer.inspector.createParameters("Torus Knot");
+  gui.add(frequencies.value, "x", 0, 10, 0.01).name("Position frequency");
+  gui.add(frequencies.value, "y", 0, 10, 0.01).name("Time frequency");
+  // gui.addColor(uColor, "value").name("Color");
 }
 
 /**

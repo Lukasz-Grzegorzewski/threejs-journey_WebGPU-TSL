@@ -4,7 +4,9 @@ import { Inspector } from "three/addons/inspector/Inspector.js";
 import { SkyMesh } from "three/addons/objects/SkyMesh.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { bloom } from "three/examples/jsm/tsl/display/BloomNode.js";
-import { pass, uv } from "three/tsl";
+import { materialEmissive, pass, uv } from "three/tsl";
+import { TransformControls } from "three/addons/controls/TransformControls.js";
+import Shield from "./Shield.js";
 
 /**
  * Base
@@ -93,6 +95,50 @@ bloomGui.add(bloomPass.threshold, "value", 0, 2, 0.01).name("threshold");
 bloomGui.add(bloomPass.strength, "value", 0, 2, 0.01).name("strength");
 
 /**
+ * Shield
+ */
+// Texture
+const hexagonsTexture = await textureLoader.loadAsync("./hexagons.png");
+hexagonsTexture.wrapS = THREE.RepeatWrapping;
+hexagonsTexture.wrapT = THREE.RepeatWrapping;
+
+// Instance
+const shield = new Shield(hexagonsTexture);
+scene.add(shield.mesh);
+
+// Raycaster
+const raycaster = new THREE.Raycaster();
+
+canvas.addEventListener("pointerdown", (event) => {
+  const mouse = new THREE.Vector2(
+    (event.clientX / sizes.width) * 2 - 1,
+    -(event.clientY / sizes.height) * 2 + 1,
+  );
+  raycaster.setFromCamera(mouse, camera);
+  const sphere = new THREE.Sphere(shield.mesh.position, shield.radius.value);
+  let intersect = new THREE.Vector3();
+  intersect = raycaster.ray.intersectSphere(sphere, intersect); // intersectSphere returns null when there is no intersection
+
+  if (intersect) shield.impacts.add(intersect);
+});
+
+// Debug
+const shieldGui = renderer.inspector.createParameters("Shield");
+shieldGui.add(shield.radius, "value", 0, 5, 0.01).name("Radius");
+shieldGui.addColor(shield.colorA, "value").name("ColorA");
+shieldGui.addColor(shield.colorB, "value").name("ColorB");
+shieldGui.add(shield.strength, "value", 1, 100, 0.01).name("Strength");
+
+// Transform
+const transform = new TransformControls(camera, canvas);
+transform.attach(shield.mesh);
+scene.add(transform.getHelper());
+
+transform.addEventListener("dragging-changed", (event) => {
+  controls.enabled = !event.value;
+});
+
+/**
  * Floor
  */
 {
@@ -103,6 +149,7 @@ bloomGui.add(bloomPass.strength, "value", 0, 2, 0.01).name("strength");
     new THREE.MeshStandardNodeMaterial({ map: texture, transparent: true }),
   );
   mesh.material.opacityNode = uv().sub(0.5).length().smoothstep(0.5, 0.2);
+  mesh.material.emissiveNode = materialEmissive.add(shield.junctionNode); // materialEmissive.add to preserv emissiveness(not present in this project but if there is)
   mesh.rotation.x = -Math.PI * 0.5;
   mesh.receiveShadow = true;
   mesh.renderOrder = -1;
@@ -117,6 +164,7 @@ model.scene.traverse((child) => {
   if (child.isMesh) {
     child.castShadow = true;
     child.receiveShadow = true;
+    child.material.emissiveNode = materialEmissive.add(shield.junctionNode); // materialEmissive.add to preserv emissiveness(not present in this project but if there is)
   }
 });
 scene.add(model.scene);

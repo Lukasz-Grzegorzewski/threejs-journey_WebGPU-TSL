@@ -1,7 +1,22 @@
 import * as THREE from "three/webgpu";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { Inspector } from "three/addons/inspector/Inspector.js";
-import { uv } from "three/tsl";
+import {
+  Fn,
+  instance,
+  instancedArray,
+  instancedBufferAttribute,
+  instanceIndex,
+  normalLocal,
+  positionLocal,
+  rotate,
+  sin,
+  storage,
+  time,
+  uniform,
+  uniformArray,
+  uv,
+} from "three/tsl";
 
 /**
  * Base
@@ -90,6 +105,358 @@ await renderer.init();
 }
 
 /**
+ * Common
+ */
+const count = 4;
+
+// Material
+const material = new THREE.MeshStandardNodeMaterial();
+
+// Geometry
+const geometry = new THREE.BoxGeometry(0.5, 1, 0.5, 12, 12, 12);
+
+// Wave
+const wave = sin(time.add(positionLocal.y.mul(3))).mul(0.4);
+
+/** ***************************************************************
+ * Method 1:
+ * Without instancing
+ * When there aren't that many instances
+ */
+
+// material.positionNode = Fn(() => {
+//   positionLocal.z.addAssign(wave);
+//   return positionLocal;
+// })();
+
+// for (let i = 0; i < count; i++) {
+//   // Mesh
+//   const mesh = new THREE.Mesh(geometry, material);
+//   mesh.castShadow = true;
+//   mesh.receiveShadow = true;
+//   scene.add(mesh);
+
+//   const progress = i / (count - 1);
+//   mesh.position.x = (progress - 0.5) * 4;
+//   mesh.position.y = 1;
+//   mesh.rotation.y = progress * 3;
+// }
+
+/** ***************************************************************
+ * Method 2:
+ * With InstancedMesh
+ * Different transform for each mesh (position, rotation, scale)
+ * Those transformations won't change at runtime
+ */
+// material.positionNode = Fn(() => {
+//   positionLocal.z.addAssign(wave);
+//   return positionLocal;
+// })();
+
+// const instancedMesh = new THREE.InstancedMesh(geometry, material, count);
+// instancedMesh.position.y = 1;
+// instancedMesh.castShadow = true;
+// instancedMesh.receiveShadow = true;
+// scene.add(instancedMesh);
+
+// for (let i = 0; i < count; i++) {
+//   const progress = i / (count - 1);
+
+//   const position = new THREE.Vector3((progress - 0.5) * 4, 0, 0);
+//   const scale = new THREE.Vector3(1, 1, 1);
+//   const rotation = new THREE.Quaternion().setFromEuler(
+//     new THREE.Euler(0, progress * 3, 0),
+//   );
+//   const matrix = new THREE.Matrix4().compose(position, rotation, scale);
+//   instancedMesh.setMatrixAt(i, matrix);
+// }
+
+/** ***************************************************************
+ * Method 3:
+ * With InstancedIndex
+ * To save on memory
+ * When the difference betweenn instances can be expressed with the <instanceIndex>
+ */
+// const countUniform = uniform(count);
+
+// material.positionNode = Fn(({ object }) => {
+//   const progress = instanceIndex.toFloat().div(countUniform.sub(1));
+
+//   // Rotation
+//   positionLocal.xz.assign(rotate(positionLocal.xz, progress.mul(3)));
+//   normalLocal.xz.assign(rotate(normalLocal.xz, progress.mul(3)));
+
+//   // Translation
+//   positionLocal.x.addAssign(progress.sub(0.5).mul(4));
+
+//   // Wave
+//   positionLocal.z.addAssign(wave);
+
+//   return positionLocal;
+// })();
+
+// // Mesh
+// const mesh = new THREE.Mesh(geometry, material);
+// mesh.count = count;
+// mesh.position.y = 1;
+// mesh.castShadow = true;
+// mesh.receiveShadow = true;
+// scene.add(mesh);
+
+// // Debug
+// const instancesGui = renderer.inspector.createParameters("Instances");
+// instancesGui.add(mesh, "count", 0, 20, 1).onChange((value) => {
+//   countUniform.value = value;
+// });
+
+/** ***************************************************************
+ * Method 4:
+ * With InstancedBufferAttribute
+ * Want to provide specyfic data for each instance (position, color, anything)
+ * That data doesn't need to update at runtime
+ */
+
+// // Buffers
+// const positionArray = new Float32Array(count * 3);
+// const positionsBuffer = new THREE.InstancedBufferAttribute(positionArray, 3);
+
+// const rotationArray = new Float32Array(count * 1);
+// const rotationsBuffer = new THREE.InstancedBufferAttribute(rotationArray, 1);
+
+// for (let i = 0; i < count; i++) {
+//   const i3 = i * 3;
+//   const progress = i / (count - 1);
+
+//   positionArray[i3 + 0] = (progress - 0.5) * 4;
+//   positionArray[i3 + 1] = 0;
+//   positionArray[i3 + 2] = 0;
+
+//   rotationArray[i] = progress * 3;
+// }
+
+// // Material
+// material.positionNode = Fn(({ object }) => {
+//   // Buffers
+//   const instancedPosition = instancedBufferAttribute(positionsBuffer);
+//   const instancedRotation = instancedBufferAttribute(rotationsBuffer);
+
+//   // Rotation
+//   positionLocal.xz.assign(rotate(positionLocal.xz, instancedRotation));
+//   normalLocal.xz.assign(rotate(normalLocal.xz, instancedRotation));
+
+//   // Translation
+//   positionLocal.addAssign(instancedPosition);
+
+//   // Wave
+//   positionLocal.z.addAssign(wave);
+
+//   return positionLocal;
+// })();
+
+// // Mesh
+// const mesh = new THREE.Mesh(geometry, material);
+// mesh.count = count;
+// mesh.position.y = 1;
+// mesh.castShadow = true;
+// mesh.receiveShadow = true;
+// scene.add(mesh);
+
+/** ***************************************************************
+ * Method 5:
+ * With InstancedInterleavedBuffer
+ * Like method 4(InstancedBufferAttribute) : Want to provide specyfic data for each instance (position, color, anything). Data doesn't need to update at runtime
+ * Absolute best memory optimisation
+ * Running the WebGL backend
+ */
+
+// // Buffers
+// const array = new Float32Array(count * 4);
+// const buffer = new THREE.InstancedInterleavedBuffer(array, 4);
+
+// for (let i = 0; i < count; i++) {
+//   const i4 = i * 4;
+//   const progress = i / (count - 1);
+
+//   array[i4 + 0] = (progress - 0.5) * 4;
+//   array[i4 + 1] = 0;
+//   array[i4 + 2] = 0;
+//   array[i4 + 3] = progress * 3;
+// }
+
+// // Material
+// material.positionNode = Fn(({ object }) => {
+//   // Buffers
+//   const instancedPosition = instancedBufferAttribute(buffer, "vec3", 0, 0);
+//   const instancedRotation = instancedBufferAttribute(buffer, "float", 0, 3);
+
+//   // Rotation
+//   positionLocal.xz.assign(rotate(positionLocal.xz, instancedRotation));
+//   normalLocal.xz.assign(rotate(normalLocal.xz, instancedRotation));
+
+//   // Translation
+//   positionLocal.addAssign(instancedPosition);
+
+//   // Wave
+//   positionLocal.z.addAssign(wave);
+
+//   return positionLocal;
+// })();
+
+// // Mesh
+// const mesh = new THREE.Mesh(geometry, material);
+// mesh.count = count;
+// mesh.position.y = 1;
+// mesh.castShadow = true;
+// mesh.receiveShadow = true;
+// scene.add(mesh);
+
+/** ***************************************************************
+ * Method 6:
+ * With InstancedBufferAttribute and full matrices
+ * Don't want to use InscancedMesh
+ * Want more control over the order in which the instance instructions are applied
+ * Those transformations won't change at runtime
+ */
+
+// const matricesArray = new Float32Array(count * 16);
+// const matricesBuffer = new THREE.InstancedBufferAttribute(matricesArray, 16);
+
+// for (let i = 0; i < count; i++) {
+//   const progress = i / (count - 1);
+//   const position = new THREE.Vector3((progress - 0.5) * 4, 0, 0);
+//   const scale = new THREE.Vector3(1, 1, 1);
+//   const rotation = new THREE.Quaternion().setFromEuler(
+//     new THREE.Euler(0, progress * 3, 0),
+//   );
+//   const matrix = new THREE.Matrix4().compose(position, rotation, scale);
+
+//   matrix.toArray(matricesArray, i * 16);
+// }
+
+// // Material
+// material.positionNode = Fn(() => {
+//   // Instanced transform
+//   instance(matricesBuffer);
+
+//   // Wave
+//   positionLocal.z.addAssign(wave);
+
+//   return positionLocal;
+// })();
+
+// // Mesh
+// const mesh = new THREE.Mesh(geometry, material);
+// mesh.count = count;
+// mesh.position.y = 1;
+// mesh.castShadow = true;
+// mesh.receiveShadow = true;
+// scene.add(mesh);
+
+/** ***************************************************************
+ * Method 7:
+ * With UniformArray
+ * Need different data per instance
+ * Not too many instances(maximum a few hundreds)
+ * Want easy control on that data
+ */
+
+// // Buffers
+// const positionsArray = [];
+// const rotationsArray = [];
+
+// for (let i = 0; i < count; i++) {
+//   const progress = i / (count - 1);
+//   const position = new THREE.Vector3((progress - 0.5) * 4, 0, 0);
+//   const rotation = progress * 3;
+
+//   positionsArray.push(position);
+//   rotationsArray.push(rotation);
+// }
+
+// const positions = uniformArray(positionsArray, "vec3");
+// const rotations = uniformArray(rotationsArray, "float");
+
+// // Material
+// material.positionNode = Fn(() => {
+//   // // Instanced transform
+//   // instance(matricesBuffer);
+
+//   // Buffers
+//   const instancedPosition = positions.element(instanceIndex);
+//   const instancedRotation = rotations.element(instanceIndex);
+
+//   // Rotation
+//   positionLocal.xz.assign(rotate(positionLocal.xz, instancedRotation));
+//   normalLocal.xz.assign(rotate(normalLocal.xz, instancedRotation));
+
+//   // Translation
+//   positionLocal.addAssign(instancedPosition);
+
+//   // Wave
+//   positionLocal.z.addAssign(wave);
+
+//   return positionLocal;
+// })();
+
+// // Mesh
+// const mesh = new THREE.Mesh(geometry, material);
+// mesh.count = count;
+// mesh.position.y = 1;
+// mesh.castShadow = true;
+// mesh.receiveShadow = true;
+// scene.add(mesh);
+
+// const maxBufferSize = renderer.backend.capabilities.getUniformBufferLimit();
+// console.log(maxBufferSize);
+
+// const bufferSize = count * 4 * 4;
+// console.log(bufferSize);
+
+/** ***************************************************************
+ * Method 8:
+ * With storage and compute
+ * Want to update the data related to each instance on the GPU
+ * When that data needs to persist
+ */
+// Buffers
+// const positionBuffer = new THREE.StorageInstancedBufferAttribute(
+//   count,
+//   3,
+//   Float32Array,
+// );
+// const positionStorage = storage(positionBuffer, "vec3", count);
+const positionStorage = instancedArray(count, "vec3");
+
+const update = Fn(() => {
+  const position = positionStorage.element(instanceIndex);
+  const instanceIndexFloat = instanceIndex.toFloat();
+  const progress = instanceIndexFloat.div(count - 1);
+
+  position.x.assign(progress.sub(0.5).mul(4));
+  position.y.assign(time.add(progress).sin());
+})();
+
+const updateCompute = update.compute(count);
+
+material.positionNode = Fn(() => {
+  // Buffers
+  const instancedPosition = positionStorage.element(instanceIndex);
+
+  // Translation
+  positionLocal.addAssign(instancedPosition);
+
+  return positionLocal;
+})();
+
+// Mesh
+const mesh = new THREE.Mesh(geometry, material);
+mesh.count = count;
+mesh.position.y = 1;
+mesh.castShadow = true;
+mesh.receiveShadow = true;
+scene.add(mesh);
+
+/**
  * Lights
  */
 const directionalLight = new THREE.DirectionalLight(0xffc799, 4);
@@ -119,6 +486,9 @@ lightsGui.add(ambientLight, "intensity", 0, 5, 0.01).name("ambientIntensity");
 const tick = () => {
   // Update controls
   controls.update();
+
+  // Compute
+  if (typeof updateCompute !== "undefined") renderer.compute(updateCompute);
 
   // Render
   renderer.render(scene, camera);
